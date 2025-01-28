@@ -1,12 +1,12 @@
 ---
-- name: Install Zsh, oh-my-zsh, Powerlevel10k, and Hack Nerd Fonts for user ansible
-  hosts: localhost
+- name: Install Zsh, oh-my-zsh, Powerlevel10k, and Hack Nerd Fonts for user
+  hosts: all
   become: yes
 
   vars:
-    user_name: ansible
+    user_name: klmn
     user_group: users
-    
+
     # oh-my-zsh
     oh_my_zsh_repo: "https://github.com/ohmyzsh/ohmyzsh.git"
     oh_my_zsh_dir: "/home/{{ user_name }}/.oh-my-zsh"
@@ -25,9 +25,9 @@
 
   tasks:
     ###########################################################################
-    # 0. Ensure the ansible user and group exist                              #
+    # 0. Ensure the user and group exist                              #
     ###########################################################################
-    - name: Create ansible user (and matching group) if needed
+    - name: Create user (and matching group) if needed
       user:
         name: "{{ user_name }}"
         create_home: yes
@@ -70,28 +70,51 @@
     ###########################################################################
     # 3. Clone oh-my-zsh into the user's home directory                       #
     ###########################################################################
-    - name: Clone oh-my-zsh
-      become_user: "{{ user_name }}"
+    - name: Remove existing /home/klmn/.oh-my-zsh if it exists
+      become: yes
+      file:
+        path: "/home/klmn/.oh-my-zsh"
+        state: absent
+
+    - name: Clone oh-my-zsh (as root, then chown)
       git:
         repo: "{{ oh_my_zsh_repo }}"
         dest: "{{ oh_my_zsh_dir }}"
         version: master
+      become: yes
+
+    - name: Fix ownership of .oh-my-zsh
+      file:
+        path: "{{ oh_my_zsh_dir }}"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        recurse: yes
+      become: yes
 
     ###########################################################################
     # 4. Clone Powerlevel10k into oh-my-zsh's custom themes directory         #
     ###########################################################################
     - name: Clone Powerlevel10k theme
-      become_user: "{{ user_name }}"
+    #  become_user: "{{ user_name }}"
       git:
         repo: "{{ powerlevel10k_repo }}"
         dest: "{{ powerlevel10k_dir }}"
         version: master
+      become: yes
+    
+    - name: Fix ownership of Powerlevel10k theme
+      file:
+        path: "{{ powerlevel10k_repo }}"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        recurse: yes
+      become: yes
 
     ###########################################################################
     # 5. Copy the default oh-my-zsh template to ~/.zshrc (if not present)     #
     ###########################################################################
     - name: Copy default oh-my-zsh zshrc template
-      become_user: "{{ user_name }}"
+      become: yes
       copy:
         src: "{{ oh_my_zsh_template }}"
         dest: "/home/{{ user_name }}/.zshrc"
@@ -99,44 +122,59 @@
         owner: "{{ user_name }}"
         group: "{{ user_name }}"
         mode: '0644'
-      when: lookup('file', "/home/" ~ user_name ~ "/.zshrc", errors='ignore') == ''
 
     ###########################################################################
     # 6. Configure .zshrc to use Powerlevel10k                                #
     ###########################################################################
     - name: Ensure ZSH_THEME is set to Powerlevel10k
-      become_user: "{{ user_name }}"
+    #  become_user: "{{ user_name }}"
       lineinfile:
         path: "/home/{{ user_name }}/.zshrc"
         regexp: '^ZSH_THEME='
         line: 'ZSH_THEME="powerlevel10k/powerlevel10k"'
+      become: yes
+    
+    - name: Fix ownership 
+      file:
+        path: "/home/{{ user_name }}/.zshrc"
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+      become: yes
 
     ###########################################################################
     # 7. Copy your existing .p10k.zsh config file                             #
     ###########################################################################
     - name: Copy .p10k.zsh to the user's home directory
-      become_user: "{{ user_name }}"
+      # become_user: "{{ user_name }}"
       copy:
         src: ".p10k.zsh"       # or "files/.p10k.zsh" if you keep it under files/ dir
         dest: "/home/{{ user_name }}/.p10k.zsh"
+        
+      become: yes
+
+    - name: Fix ownership 
+      file:
+        path: "/home/{{ user_name }}/.p10k.zsh"
         owner: "{{ user_name }}"
-        group: "{{ user_group }}"
-        mode: '0644'
+        group: "{{ user_name }}"
+      become: yes  
 
     ###########################################################################
     # 8. Ensure .zshrc sources .p10k.zsh                                      #
     ###########################################################################
     - name: Source .p10k.zsh from .zshrc
-      become_user: "{{ user_name }}"
+      # become_user: "{{ user_name }}"
+      become: yes
       lineinfile:
         path: "/home/{{ user_name }}/.zshrc"
         regexp: '^(\[\[ -f ~/.p10k.zsh \]\])'
         line: '[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh'
+      
 
     ###########################################################################
-    # 9. Set Zsh as default shell for the ansible user                        #
+    # 9. Set Zsh as default shell for the user                        #
     ###########################################################################
-    - name: Set Zsh as default shell for ansible
+    - name: Set Zsh as default shell for user
       user:
         name: "{{ user_name }}"
         shell: /usr/bin/zsh
