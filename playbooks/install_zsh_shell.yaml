@@ -1,0 +1,15 @@
+---
+- name: Install Zsh and change default shell
+  hosts: localhost
+  become: yes  
+  tasks:
+    - name: Ensure Zsh is installed
+      apt:
+        name: zsh
+        state: present
+        update_cache: yes
+
+    - name: Change default shell for user ansible to Zsh
+      user:
+        name: ansible
+        shell: /bin/zsh

@@ -1,0 +1,7 @@
+[k3s]
+k3s-srv01
+k3s-srv02
+k3s-srv03
+k3s-node01
+k3s-node02
+k3s-node03

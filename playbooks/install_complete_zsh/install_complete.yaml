@@ -1,0 +1,142 @@
+---
+- name: Install Zsh, oh-my-zsh, Powerlevel10k, and Hack Nerd Fonts for user ansible
+  hosts: localhost
+  become: yes
+
+  vars:
+    user_name: ansible
+    user_group: users
+    
+    # oh-my-zsh
+    oh_my_zsh_repo: "https://github.com/ohmyzsh/ohmyzsh.git"
+    oh_my_zsh_dir: "/home/{{ user_name }}/.oh-my-zsh"
+    oh_my_zsh_template: "{{ oh_my_zsh_dir }}/templates/zshrc.zsh-template"
+
+    # Powerlevel10k
+    powerlevel10k_repo: "https://github.com/romkatv/powerlevel10k.git"
+    powerlevel10k_dir: "{{ oh_my_zsh_dir }}/custom/themes/powerlevel10k"
+
+    # Hack Nerd Fonts
+    hack_nerd_fonts:
+      - { name: "Hack Regular Nerd Font Complete.ttf",     url: "https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/Regular/HackNerdFont-Regular.ttf" }
+      - { name: "Hack Bold Nerd Font Complete.ttf",        url: "https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/Bold/HackNerdFont-Bold.ttf" }
+      - { name: "Hack Italic Nerd Font Complete.ttf",      url: "https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/Italic/HackNerdFont-Italic.ttf" }
+      - { name: "Hack Bold Italic Nerd Font Complete.ttf", url: "https://github.com/ryanoasis/nerd-fonts/blob/master/patched-fonts/Hack/BoldItalic/HackNerdFont-BoldItalic.ttf" }
+
+  tasks:
+    ###########################################################################
+    # 0. Ensure the ansible user and group exist                              #
+    ###########################################################################
+    - name: Create ansible user (and matching group) if needed
+      user:
+        name: "{{ user_name }}"
+        create_home: yes
+        shell: /bin/bash  # We'll update to zsh below
+
+    ###########################################################################
+    # 1. Install required packages (Zsh + font utilities)                     #
+    ###########################################################################
+    - name: Ensure Zsh, fontconfig, and unzip are installed
+      apt:
+        name:
+          - zsh
+          - fontconfig  # required to rebuild the font cache
+          - unzip       # if needed to unzip fonts
+          - git
+        state: present
+        update_cache: yes
+
+    ###########################################################################
+    # 2. Install Hack Nerd Fonts system-wide                                  #
+    ###########################################################################
+    - name: Create fonts directory if not exists
+      file:
+        path: /usr/local/share/fonts
+        state: directory
+        mode: '0755'
+
+    - name: Download Hack Nerd Fonts
+      loop: "{{ hack_nerd_fonts }}"
+      loop_control:
+        label: "{{ item.name }}"
+      get_url:
+        url: "{{ item.url }}"
+        dest: "/usr/local/share/fonts/{{ item.name }}"
+        mode: '0644'
+
+    - name: Rebuild font cache
+      command: fc-cache -fv
+
+    ###########################################################################
+    # 3. Clone oh-my-zsh into the user's home directory                       #
+    ###########################################################################
+    - name: Clone oh-my-zsh
+      become_user: "{{ user_name }}"
+      git:
+        repo: "{{ oh_my_zsh_repo }}"
+        dest: "{{ oh_my_zsh_dir }}"
+        version: master
+
+    ###########################################################################
+    # 4. Clone Powerlevel10k into oh-my-zsh's custom themes directory         #
+    ###########################################################################
+    - name: Clone Powerlevel10k theme
+      become_user: "{{ user_name }}"
+      git:
+        repo: "{{ powerlevel10k_repo }}"
+        dest: "{{ powerlevel10k_dir }}"
+        version: master
+
+    ###########################################################################
+    # 5. Copy the default oh-my-zsh template to ~/.zshrc (if not present)     #
+    ###########################################################################
+    - name: Copy default oh-my-zsh zshrc template
+      become_user: "{{ user_name }}"
+      copy:
+        src: "{{ oh_my_zsh_template }}"
+        dest: "/home/{{ user_name }}/.zshrc"
+        remote_src: true
+        owner: "{{ user_name }}"
+        group: "{{ user_name }}"
+        mode: '0644'
+      when: lookup('file', "/home/" ~ user_name ~ "/.zshrc", errors='ignore') == ''
+
+    ###########################################################################
+    # 6. Configure .zshrc to use Powerlevel10k                                #
+    ###########################################################################
+    - name: Ensure ZSH_THEME is set to Powerlevel10k
+      become_user: "{{ user_name }}"
+      lineinfile:
+        path: "/home/{{ user_name }}/.zshrc"
+        regexp: '^ZSH_THEME='
+        line: 'ZSH_THEME="powerlevel10k/powerlevel10k"'
+
+    ###########################################################################
+    # 7. Copy your existing .p10k.zsh config file                             #
+    ###########################################################################
+    - name: Copy .p10k.zsh to the user's home directory
+      become_user: "{{ user_name }}"
+      copy:
+        src: ".p10k.zsh"       # or "files/.p10k.zsh" if you keep it under files/ dir
+        dest: "/home/{{ user_name }}/.p10k.zsh"
+        owner: "{{ user_name }}"
+        group: "{{ user_group }}"
+        mode: '0644'
+
+    ###########################################################################
+    # 8. Ensure .zshrc sources .p10k.zsh                                      #
+    ###########################################################################
+    - name: Source .p10k.zsh from .zshrc
+      become_user: "{{ user_name }}"
+      lineinfile:
+        path: "/home/{{ user_name }}/.zshrc"
+        regexp: '^(\[\[ -f ~/.p10k.zsh \]\])'
+        line: '[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh'
+
+    ###########################################################################
+    # 9. Set Zsh as default shell for the ansible user                        #
+    ###########################################################################
+    - name: Set Zsh as default shell for ansible
+      user:
+        name: "{{ user_name }}"
+        shell: /usr/bin/zsh
